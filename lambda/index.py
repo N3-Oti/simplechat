@@ -41,7 +41,7 @@ def extract_region_from_arn(arn):
 # Lambda の実行環境 (コンテナ) が再利用される場合に、クライアントの初期化コストを削減するため。
 # API_URL（Google Colabで立てたAPI）
 # bedrock_client = None
-API_URL = "https://7174-104-196-208-216.ngrok-free.app"
+API_URL = "https://a8d9-34-124-212-81.ngrok-free.app/"
 
 # 使用する Bedrock モデルの ID を環境変数 'MODEL_ID' から取得します。
 # 環境変数が設定されていない場合は、デフォルト値 'us.amazon.nova-lite-v1:0' を使用します。
