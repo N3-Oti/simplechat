@@ -6,8 +6,11 @@
 # --- ライブラリのインポート ---
 import json  # JSON 形式のデータのエンコード・デコードに使用
 import os  # 環境変数へのアクセスに使用 (例: Bedrock モデル ID の取得)
-import boto3  # AWS SDK for Python (Boto3)。AWS サービス (Bedrock など) との連携に使用
+import urllib.request  # 標準ライブラリを使用して HTTP リクエストを送信
+import urllib.error  # HTTP エラーを処理するために使用
+# import boto3  # AWS SDK for Python (Boto3)。AWS サービス (Bedrock など) との連携に使用
 import re  # 正規表現ライブラリ。Lambda 関数の ARN からリージョンを抽出するために使用
+
 from botocore.exceptions import ClientError  # Boto3 のクライアントエラーを捕捉するために使用
 
 
@@ -36,12 +39,14 @@ def extract_region_from_arn(arn):
 # --- グローバル変数 ---
 # Bedrock ランタイムクライアントのインスタンスを格納するグローバル変数。
 # Lambda の実行環境 (コンテナ) が再利用される場合に、クライアントの初期化コストを削減するため。
-bedrock_client = None
+# API_URL（Google Colabで立てたAPI）
+# bedrock_client = None
+API_URL = "https://7174-104-196-208-216.ngrok-free.app"
 
 # 使用する Bedrock モデルの ID を環境変数 'MODEL_ID' から取得します。
 # 環境変数が設定されていない場合は、デフォルト値 'us.amazon.nova-lite-v1:0' を使用します。
 # この環境変数は、AWS CDK スタック (`lib/bedrock-chatbot-stack.ts`) で Lambda 関数に設定されます。
-MODEL_ID = os.environ.get("MODEL_ID", "us.amazon.nova-lite-v1:0")
+# MODEL_ID = os.environ.get("MODEL_ID", "us.amazon.nova-lite-v1:0")
 
 
 # --- Lambda 関数ハンドラー ---
@@ -60,6 +65,7 @@ def lambda_handler(event, context):
         dict: API Gateway に返すレスポンス。statusCode, headers, body を含みます。
     """
     try:
+        """
         # --- Bedrock クライアントの初期化 (初回呼び出しか、コンテナ再利用時) ---
         global bedrock_client
         if bedrock_client is None:
@@ -72,7 +78,7 @@ def lambda_handler(event, context):
             bedrock_client = boto3.client("bedrock-runtime", region_name=region)
             # 初期化ログを出力
             print(f"Initialized Bedrock client in region: {region}")
-
+        """
         # --- イベントデータのログ出力 (デバッグ用) ---
         # 受信したイベント全体を JSON 形式で CloudWatch Logs に出力します。
         print("Received event:", json.dumps(event))
@@ -100,7 +106,7 @@ def lambda_handler(event, context):
 
         # --- デバッグ情報の出力 ---
         print(f"Processing message: '{message}'")
-        print(f"Using model: {MODEL_ID}")
+        # print(f"Using model: {MODEL_ID}")
         print(f"Received conversation history length: {len(conversation_history)}")
 
         # --- 会話履歴の準備 ---
@@ -111,6 +117,7 @@ def lambda_handler(event, context):
         # 形式: {"role": "user", "content": "ユーザーメッセージ"}
         messages.append({"role": "user", "content": message})
 
+        """
         # --- Bedrock API 用のメッセージ形式に変換 ---
         # Bedrock の Converse API (InvokeModel) は特定のメッセージ形式を要求します。
         # (例: Amazon Titan, Claude, Llama など、モデルによって形式が異なる場合がある)
@@ -124,7 +131,18 @@ def lambda_handler(event, context):
                 # アシスタント (モデル) の応答も同様の形式に変換
                 bedrock_messages.append({"role": "assistant", "content": [{"text": msg["content"]}]})
             # 他のロール (例: system) がある場合はここに追加
+        """
 
+        # --- FASTAPI リクエストペイロードの構築 ---
+        request_payload = {
+            "prompt": message,  # ユーザーメッセージをプロンプトとして送信
+            "max_new_tokens": 512,  # 最大トークン数
+            "do_sample": True,  # サンプリングの使用
+            "temperature": 0.7,  # 温度パラメータ
+            "top_p": 0.9  # top_pパラメータ
+        }
+
+        """
         # --- Bedrock API リクエストペイロードの構築 ---
         # Bedrock の invoke_model API に送信するリクエストボディを作成します。
         request_payload = {
@@ -137,6 +155,11 @@ def lambda_handler(event, context):
             },
             # "additionalModelRequestFields": {} # モデル固有の追加パラメータがあればここに記述
         }
+        """
+        # --- FASTAPIの呼び出し ---
+        print("Calling FAST_API with payload:", json.dumps(request_payload))
+
+        """
 
         # --- Bedrock API の呼び出し ---
         print("Calling Bedrock invoke_model API with payload:", json.dumps(request_payload))
@@ -147,17 +170,19 @@ def lambda_handler(event, context):
             contentType="application/json",  # リクエストボディの Content-Type
         )
         print("Bedrock API call successful.")
+        """
 
         # --- レスポンスの解析 ---
         # API からのレスポンスボディ (ストリーミングオブジェクト) を読み取り、JSON オブジェクトにパースします。
-        response_body = json.loads(response["body"].read())
+        #response_body = json.loads(response["body"].read())
         # 解析したレスポンスボディをログに出力 (デバッグ用)
         # default=str は datetime オブジェクトなど JSON シリアライズできない型を文字列に変換するため
-        print("Bedrock response:", json.dumps(response_body, default=str))
-
+        #print("Bedrock response:", json.dumps(response_body, default=str))
+        print("FAST_API response:", json.dumps(response_payload, default=str))
         # --- レスポンス内容の検証 ---
         # Bedrock からの応答に必要なキーが存在するかを確認します。
         # モデルや状況によっては期待した形式で応答が返らない可能性があるため。
+        """
         if (
             not response_body.get("output")  # "output" キーが存在しない
             or not response_body["output"].get("message")  # "output.message" キーが存在しない
@@ -168,6 +193,7 @@ def lambda_handler(event, context):
                 "text"
             )  # content リストの最初の要素に "text" キーがない
         ):
+        """
             # 期待した形式でない場合はエラーを発生させる
             print("Error: Unexpected response structure from Bedrock model.")
             raise Exception("No valid response content received from the model")
