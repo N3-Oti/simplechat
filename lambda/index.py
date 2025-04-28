@@ -8,6 +8,7 @@ import json  # JSON 形式のデータのエンコード・デコードに使用
 import os  # 環境変数へのアクセスに使用 (例: Bedrock モデル ID の取得)
 import urllib.request  # 標準ライブラリを使用して HTTP リクエストを送信
 import urllib.error  # HTTP エラーを処理するために使用
+
 # import boto3  # AWS SDK for Python (Boto3)。AWS サービス (Bedrock など) との連携に使用
 import re  # 正規表現ライブラリ。Lambda 関数の ARN からリージョンを抽出するために使用
 
@@ -41,7 +42,7 @@ def extract_region_from_arn(arn):
 # Lambda の実行環境 (コンテナ) が再利用される場合に、クライアントの初期化コストを削減するため。
 # API_URL（Google Colabで立てたAPI）
 # bedrock_client = None
-API_URL = "https://a8d9-34-124-212-81.ngrok-free.app/"
+API_URL = "https://d39c-34-124-212-81.ngrok-free.app/generate"
 
 # 使用する Bedrock モデルの ID を環境変数 'MODEL_ID' から取得します。
 # 環境変数が設定されていない場合は、デフォルト値 'us.amazon.nova-lite-v1:0' を使用します。
@@ -139,7 +140,7 @@ def lambda_handler(event, context):
             "max_new_tokens": 512,  # 最大トークン数
             "do_sample": True,  # サンプリングの使用
             "temperature": 0.7,  # 温度パラメータ
-            "top_p": 0.9  # top_pパラメータ
+            "top_p": 0.9,  # top_pパラメータ
         }
 
         """
@@ -159,6 +160,28 @@ def lambda_handler(event, context):
         # --- FASTAPIの呼び出し ---
         print("Calling FAST_API with payload:", json.dumps(request_payload))
 
+        # HTTPリクエストの設定
+        req = urllib.request.Request(
+            API_URL,
+            data=json.dumps(request_payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        # HTTPリクエストの送信と応答の受信
+        try:
+            with urllib.request.urlopen(req) as response:
+                response_data = response.read().decode("utf-8")
+                response_body = json.loads(response_data)
+                print("Custom API call successful.")
+        except urllib.error.HTTPError as e:
+            print(f"HTTP Error occurred: {e.code} {e.reason}")
+            raise Exception(f"API request failed with status code {e.code}: {e.reason}")
+        except urllib.error.URLError as e:
+            print(f"URL Error occurred: {e.reason}")
+            raise Exception(f"API connection failed: {e.reason}")
         """
 
         # --- Bedrock API の呼び出し ---
@@ -174,11 +197,11 @@ def lambda_handler(event, context):
 
         # --- レスポンスの解析 ---
         # API からのレスポンスボディ (ストリーミングオブジェクト) を読み取り、JSON オブジェクトにパースします。
-        #response_body = json.loads(response["body"].read())
+        # response_body = json.loads(response["body"].read())
         # 解析したレスポンスボディをログに出力 (デバッグ用)
         # default=str は datetime オブジェクトなど JSON シリアライズできない型を文字列に変換するため
-        #print("Bedrock response:", json.dumps(response_body, default=str))
-        print("FAST_API response:", json.dumps(response_payload, default=str))
+        # print("Bedrock response:", json.dumps(response_body, default=str))
+        print("FAST_API response:", json.dumps(response_body, default=str))
         # --- レスポンス内容の検証 ---
         # Bedrock からの応答に必要なキーが存在するかを確認します。
         # モデルや状況によっては期待した形式で応答が返らない可能性があるため。
@@ -193,14 +216,16 @@ def lambda_handler(event, context):
                 "text"
             )  # content リストの最初の要素に "text" キーがない
         ):
-        """
+
             # 期待した形式でない場合はエラーを発生させる
             print("Error: Unexpected response structure from Bedrock model.")
             raise Exception("No valid response content received from the model")
+        """
 
         # --- アシスタントの応答を取得 ---
         # レスポンスボディからアシスタント (モデル) が生成したテキスト応答を抽出します。
-        assistant_response = response_body["output"]["message"]["content"][0]["text"]
+        # assistant_response = response_body["output"]["message"]["content"][0]["text"]
+        assistant_response = response_body.get("generated_text", "")
         print(f"Assistant response: '{assistant_response}'")
 
         # --- 会話履歴の更新 ---
